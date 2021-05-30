@@ -6,7 +6,7 @@ Follow the instructions in order:
 1. Fork this repository.
 
 2. Clone your fork, using
-    `git clone https://github.com/nlok5923/contribute.git`
+    `git clone https://github.com/lakshayroop5/myfirstproject`
 
 3. Change Directory to `contribute`, using
     `cd contribute`
