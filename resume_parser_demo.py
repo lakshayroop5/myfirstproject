@@ -32,7 +32,7 @@ async def parse_resume_with_intelligent_prompt():
     print("-" * 80)
     
     llm_config = {
-        'api_key': os.getenv('OPENAI_API_KEY', 'api_key'),
+        'api_key': os.getenv('OPENAI_API_KEY', ''your_api_key''),
         'model': 'gpt-4',  # Using GPT-4 for best quality
         'max_tokens': 2000,
         'temperature': 0.0  # Deterministic output

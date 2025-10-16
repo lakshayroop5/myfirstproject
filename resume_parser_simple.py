@@ -15,7 +15,7 @@ async def main():
     
     # Configure agent
     llm_config = {
-        'api_key': os.getenv('OPENAI_API_KEY', 'api_key'),
+        'api_key': os.getenv('OPENAI_API_KEY', ''your_api_key''),
         'model': 'gpt-4',
         'max_tokens': 2000,
         'temperature': 0.0

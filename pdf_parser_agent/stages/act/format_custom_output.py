@@ -51,7 +51,6 @@ def format_custom_output(ctx) -> PdfParserVO:
     logger.info("Custom output formatting completed")
     return vo
 
-
 def _format_with_llm(text: str, format_requirement: str, tools) -> str:
     """Use LLM to format the extracted text according to user requirements."""
     
@@ -68,14 +67,11 @@ Rules:
 - If requested information is not found, state that clearly
 - Format output in a readable structure (use bullet points, sections, etc.)
 - Do not make up or hallucinate information"""
-
-    # Limit text size to avoid token limits (keep first 8000 chars as that's ~2000 tokens)
-    text_sample = text[:8000] if len(text) > 8000 else text
     
     user_msg = f"""Format the following extracted text according to this requirement: "{format_requirement}"
 
 Extracted Text:
-{text_sample}
+{text}
 
 Format the output as requested above."""
 
@@ -88,14 +84,25 @@ Format the output as requested above."""
         
         logger.info("Using OpenAI tool from registry")
         
-        # Execute LLM call using the tool registry
-        result = tools.execute_sync(
-            'openai',
-            prompt=user_msg,
-            system_prompt=system_prompt,
-            max_tokens=1500,
-            temperature=0.0
-        )
+        # Get the OpenAI tool directly from registry and execute
+        # We can't use tools.execute_sync() because Prefect's event loop is already running
+        import asyncio
+        import concurrent.futures
+        
+        openai_tool = tools.registry.get_tool('openai')
+        
+        # Execute in a separate thread to avoid event loop conflicts
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                asyncio.run,
+                openai_tool.execute(
+                    prompt=user_msg,
+                    system_prompt=system_prompt,
+                    max_tokens=1500,
+                    temperature=0.0
+                )
+            )
+            result = future.result()
         
         if result.status.value == "success":
             response_text = result.data.get("response", "")
