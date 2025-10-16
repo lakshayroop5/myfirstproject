@@ -1,5 +1,7 @@
 from typing import Optional, Dict, Any
 from agent_sdk import agentic_spine, agentic_spine_simple
+from agent_sdk.tools.base import get_tool_registry
+from agent_sdk.tools.llm import OpenAITool
 from pdf_parser_agent.stages.perceive.parse_user_prompt import parse_user_prompt
 from pdf_parser_agent.stages.perceive.validate_file_path import validate_file_path
 from pdf_parser_agent.stages.perceive.detect_pdf_type import detect_pdf_type
@@ -25,6 +27,20 @@ class PdfParserAgent:
                        }
         """
         self.llm_config = llm_config
+        
+        # Register OpenAI tool in the tool registry if llm_config is provided
+        if llm_config:
+            self._register_llm_tool(llm_config)
+    
+    def _register_llm_tool(self, llm_config: Dict[str, Any]):
+        """Register the OpenAI LLM tool in the global tool registry."""
+        registry = get_tool_registry()
+        
+        # Check if already registered
+        if 'openai' not in registry.list_tools():
+            openai_tool = OpenAITool(name='openai', config=llm_config)
+            registry.register(openai_tool, category='llm')
+            print(f"✓ Registered OpenAI tool in registry")
     
     async def run(self, prompt: str, session_id: str) -> PdfParserVO:
         """

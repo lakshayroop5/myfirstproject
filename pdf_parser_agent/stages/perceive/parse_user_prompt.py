@@ -2,7 +2,7 @@ import json
 import re
 from prefect import task
 from agent_sdk import perceive, Stage, get_logger, setup_logging
-from agent_sdk.tools.llm import OpenAITool
+from agent_sdk.tools.hooks import ToolContext
 from pdf_parser_agent.vo.pdf_parser_vo import PdfParserVO
 
 # Setup logging
@@ -35,7 +35,9 @@ def parse_user_prompt(ctx) -> PdfParserVO:
     if has_preferences:
         # Use LLM to parse complex prompt with preferences
         logger.info("Prompt contains preferences, using LLM to parse")
-        parsed_data = _parse_with_llm(user_prompt, ctx)
+        # Create ToolContext to access registered tools
+        tools = ToolContext()
+        parsed_data = _parse_with_llm(user_prompt, tools)
         
         # Override file_path if LLM found a better one
         if parsed_data.get("file_path"):
@@ -103,22 +105,8 @@ def _has_extraction_preferences(prompt: str) -> bool:
     return any(keyword in prompt_lower for keyword in strategy_keywords + format_keywords)
 
 
-def _parse_with_llm(prompt: str, ctx) -> dict:
+def _parse_with_llm(prompt: str, tools) -> dict:
     """Use LLM to parse the prompt and extract structured information."""
-    
-    # Get LLM configuration from container if available
-    llm_config = {}
-    if hasattr(ctx.data['input'], 'container') and ctx.data['input'].container:
-        llm_config = ctx.data['input'].container.get('llm_config', {})
-    
-    # Default config if not provided
-    if not llm_config:
-        llm_config = {
-            'api_key': 'your-api-key-here',  # User should set this
-            'model': 'gpt-4o-mini',  # Using fastest model for efficiency
-            'max_tokens': 300,
-            'temperature': 0.0  # Deterministic output
-        }
     
     system_prompt = """You are a parser that extracts structured information from user prompts about PDF parsing.
 
@@ -137,36 +125,22 @@ Example output:
     user_msg = f"Parse this prompt: {prompt}"
     
     try:
-        # Create LLM tool instance
-        llm = OpenAITool(name="prompt_parser", config=llm_config)
+        # Check if OpenAI tool is available
+        available_llm_tools = tools.get_available_tools(category='llm')
+        if 'openai' not in available_llm_tools:
+            logger.warning("OpenAI tool not available in registry")
+            return {"file_path": _extract_file_path_regex(prompt)}
         
-        # Execute LLM call - handle async properly
-        import asyncio
-        try:
-            # Try to get existing loop
-            loop = asyncio.get_running_loop()
-            # If we're in an async context, we need to use run_in_executor
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                result = executor.submit(
-                    asyncio.run,
-                    llm.execute(
-                        prompt=user_msg,
-                        system_prompt=system_prompt,
-                        max_tokens=llm_config.get('max_tokens', 300),
-                        temperature=0.0
-                    )
-                ).result()
-        except RuntimeError:
-            # No event loop running, safe to use asyncio.run
-            result = asyncio.run(
-                llm.execute(
-                    prompt=user_msg,
-                    system_prompt=system_prompt,
-                    max_tokens=llm_config.get('max_tokens', 300),
-                    temperature=0.0
-                )
-            )
+        logger.info("Using OpenAI tool from registry")
+        
+        # Execute LLM call using the tool registry
+        result = tools.execute_sync(
+            'openai',
+            prompt=user_msg,
+            system_prompt=system_prompt,
+            max_tokens=300,
+            temperature=0.0
+        )
         
         if result.status.value == "success":
             response_text = result.data.get("response", "{}")

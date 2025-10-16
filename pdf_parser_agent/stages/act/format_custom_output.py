@@ -1,7 +1,7 @@
 import json
 from prefect import task
 from agent_sdk import act, Stage, get_logger, setup_logging
-from agent_sdk.tools.llm import OpenAITool
+from agent_sdk.tools.hooks import ToolContext
 from pdf_parser_agent.vo.pdf_parser_vo import PdfParserVO
 
 # Setup logging
@@ -34,7 +34,9 @@ def format_custom_output(ctx) -> PdfParserVO:
         return vo
     
     # Use LLM to format output according to user requirements
-    formatted_output = _format_with_llm(extracted_text, vo.user_output_format, ctx)
+    # Create ToolContext to access registered tools
+    tools = ToolContext()
+    formatted_output = _format_with_llm(extracted_text, vo.user_output_format, tools)
     
     # Store formatted output in output_bundle
     current_bundle = vo.output_bundle or {}
@@ -50,22 +52,8 @@ def format_custom_output(ctx) -> PdfParserVO:
     return vo
 
 
-def _format_with_llm(text: str, format_requirement: str, ctx) -> str:
+def _format_with_llm(text: str, format_requirement: str, tools) -> str:
     """Use LLM to format the extracted text according to user requirements."""
-    
-    # Get LLM configuration from container if available
-    llm_config = {}
-    if hasattr(ctx.data['input'], 'container') and ctx.data['input'].container:
-        llm_config = ctx.data['input'].container.get('llm_config', {})
-    
-    # Default config if not provided
-    if not llm_config:
-        llm_config = {
-            'api_key': 'your-api-key-here',  # User should set this
-            'model': 'gpt-4o-mini',  # Using efficient model
-            'max_tokens': 1500,
-            'temperature': 0.0  # Deterministic output
-        }
     
     system_prompt = """You are an expert at analyzing and formatting document content.
 
@@ -92,36 +80,22 @@ Extracted Text:
 Format the output as requested above."""
 
     try:
-        # Create LLM tool instance
-        llm = OpenAITool(name="output_formatter", config=llm_config)
+        # Check if OpenAI tool is available
+        available_llm_tools = tools.get_available_tools(category='llm')
+        if 'openai' not in available_llm_tools:
+            logger.warning("OpenAI tool not available in registry")
+            return "Error: OpenAI tool not configured. Please provide llm_config when initializing the agent."
         
-        # Execute LLM call - handle async properly
-        import asyncio
-        try:
-            # Try to get existing loop
-            loop = asyncio.get_running_loop()
-            # If we're in an async context, we need to use run_in_executor
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                result = executor.submit(
-                    asyncio.run,
-                    llm.execute(
-                        prompt=user_msg,
-                        system_prompt=system_prompt,
-                        max_tokens=llm_config.get('max_tokens', 1500),
-                        temperature=0.0
-                    )
-                ).result()
-        except RuntimeError:
-            # No event loop running, safe to use asyncio.run
-            result = asyncio.run(
-                llm.execute(
-                    prompt=user_msg,
-                    system_prompt=system_prompt,
-                    max_tokens=llm_config.get('max_tokens', 1500),
-                    temperature=0.0
-                )
-            )
+        logger.info("Using OpenAI tool from registry")
+        
+        # Execute LLM call using the tool registry
+        result = tools.execute_sync(
+            'openai',
+            prompt=user_msg,
+            system_prompt=system_prompt,
+            max_tokens=1500,
+            temperature=0.0
+        )
         
         if result.status.value == "success":
             response_text = result.data.get("response", "")
