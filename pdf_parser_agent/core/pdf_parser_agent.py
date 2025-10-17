@@ -10,7 +10,6 @@ from pdf_parser_agent.stages.plan.prepare_extraction_config import prepare_extra
 from pdf_parser_agent.stages.act.extract_content import extract_content
 from pdf_parser_agent.stages.act.structure_output import structure_output
 from pdf_parser_agent.stages.act.format_custom_output import format_custom_output
-from pdf_parser_agent.vo.pdf_parser_vo import PdfParserVO
 
 class PdfParserAgent:
     def __init__(self, llm_config: Optional[Dict[str, Any]] = None):
@@ -42,7 +41,7 @@ class PdfParserAgent:
             registry.register(openai_tool, category='llm')
             print(f"✓ Registered OpenAI tool in registry")
     
-    async def run(self, prompt: str, session_id: str) -> PdfParserVO:
+    async def run(self, prompt: str, session_id: str) -> Dict[str, Any]:
         """
         Run the PDF parser agent with a natural language prompt.
         
@@ -53,16 +52,29 @@ class PdfParserAgent:
             session_id: Unique session identifier
             
         Returns:
-            PdfParserVO with parsed content and output
+            Dictionary with parsed content and output
         """
-        vo = PdfParserVO(
-            user_prompt=prompt,
-            session_id=session_id,
-            container={'llm_config': self.llm_config} if self.llm_config else None
-        )
+        context_dict = {
+            'user_prompt': prompt,
+            'session_id': session_id,
+            'file_path': '',
+            'container': {'llm_config': self.llm_config} if self.llm_config else {},
+            'user_extraction_strategy': None,
+            'user_output_format': None,
+            'stage_data': {},
+            'meta': {},
+            'parsed_content': {
+                'text': '',
+                'images': [],
+                'tables': [],
+                'metadata': {}
+            },
+            'sources': [],
+            'output_bundle': {}
+        }
 
-        result_context = agentic_spine_simple(
-            input_data=vo,
+        result_context = await agentic_spine(
+            input_data=context_dict,
             functions=[
                 parse_user_prompt,       # NEW: Parse natural language prompt
                 validate_file_path,
@@ -75,5 +87,8 @@ class PdfParserAgent:
             ],
         )
 
-        # Extract the actual VO from the context
-        return result_context.data['input']
+        # Return the result (check if it's an object with .data or direct dict)
+        if hasattr(result_context, 'data'):
+            return result_context.data.get('input', result_context.data)
+        else:
+            return result_context

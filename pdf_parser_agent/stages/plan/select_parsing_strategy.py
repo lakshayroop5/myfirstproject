@@ -1,6 +1,6 @@
+from typing import Dict, Any
 from prefect import task
 from agent_sdk import plan, Stage, get_logger, setup_logging
-from pdf_parser_agent.vo.pdf_parser_vo import PdfParserVO
 
 # Setup logging
 setup_logging(level="INFO")
@@ -8,15 +8,16 @@ logger = get_logger(__name__)
 
 @plan
 @task(name="select_parsing_strategy")
-def select_parsing_strategy(ctx) -> PdfParserVO:
-    vo = ctx.data['input']
-    is_scanned = vo.pick("perceive", "is_scanned", False)
-    has_text = vo.pick("perceive", "has_text", False)
-    has_images = vo.pick("perceive", "has_images", False)
-    text_coverage = vo.pick("perceive", "text_coverage", 0.0)
+async def select_parsing_strategy(ctx) -> Dict[str, Any]:
+    context = ctx['input']
+    perceive_data = context.get('stage_data', {}).get('perceive', {})
+    is_scanned = perceive_data.get('is_scanned', False)
+    has_text = perceive_data.get('has_text', False)
+    has_images = perceive_data.get('has_images', False)
+    text_coverage = perceive_data.get('text_coverage', 0.0)
 
     # Check if user has specified a preference for extraction strategy
-    user_strategy = vo.user_extraction_strategy
+    user_strategy = context.get('user_extraction_strategy')
     
     if user_strategy:
         # User has specified a preference, use it if valid
@@ -40,13 +41,20 @@ def select_parsing_strategy(ctx) -> PdfParserVO:
             methods = ["extract_images"]
         logger.info(f"Auto-selected strategy based on PDF type: {strategy}")
 
-    vo.put("plan",
-           parsing_strategy=strategy,
-           extraction_methods=methods,
-           requires_ocr=(is_scanned or strategy == "ocr"),
-           user_overridden=(user_strategy is not None))
+    # Initialize stage_data if needed
+    if 'stage_data' not in context:
+        context['stage_data'] = {}
+    if 'plan' not in context['stage_data']:
+        context['stage_data']['plan'] = {}
+    
+    context['stage_data']['plan'].update({
+        'parsing_strategy': strategy,
+        'extraction_methods': methods,
+        'requires_ocr': (is_scanned or strategy == "ocr"),
+        'user_overridden': (user_strategy is not None)
+    })
 
-    return vo
+    return {'input': context}
 
 
 def _map_user_strategy(user_strategy: str) -> str:

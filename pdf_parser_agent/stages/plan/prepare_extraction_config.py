@@ -1,6 +1,6 @@
+from typing import Dict, Any
 from prefect import task
 from agent_sdk import plan, Stage, get_logger, setup_logging
-from pdf_parser_agent.vo.pdf_parser_vo import PdfParserVO
 
 # Setup logging
 setup_logging(level="INFO")
@@ -8,11 +8,14 @@ logger = get_logger(__name__)
 
 @plan
 @task(name="prepare_extraction_config")
-def prepare_extraction_config(ctx) -> PdfParserVO:
-    vo = ctx.data['input']
-    strategy = vo.pick("plan", "parsing_strategy", "text")
-    methods = vo.pick("plan", "extraction_methods", [])
-    page_count = vo.pick("perceive", "page_count", 0)
+async def prepare_extraction_config(ctx) -> Dict[str, Any]:
+    context = ctx['input']
+    plan_data = context.get('stage_data', {}).get('plan', {})
+    perceive_data = context.get('stage_data', {}).get('perceive', {})
+    
+    strategy = plan_data.get('parsing_strategy', 'text')
+    methods = plan_data.get('extraction_methods', [])
+    page_count = perceive_data.get('page_count', 0)
 
     # Configure extraction parameters
     config = {
@@ -35,6 +38,12 @@ def prepare_extraction_config(ctx) -> PdfParserVO:
         },
     }
 
-    vo.put("plan", extraction_config=config)
+    # Initialize stage_data if needed
+    if 'stage_data' not in context:
+        context['stage_data'] = {}
+    if 'plan' not in context['stage_data']:
+        context['stage_data']['plan'] = {}
+    
+    context['stage_data']['plan']['extraction_config'] = config
 
-    return vo
+    return {'input': context}

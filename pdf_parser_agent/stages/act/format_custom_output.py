@@ -1,8 +1,8 @@
 import json
+from typing import Dict, Any
 from prefect import task
 from agent_sdk import act, Stage, get_logger, setup_logging
 from agent_sdk.tools.hooks import ToolContext
-from pdf_parser_agent.vo.pdf_parser_vo import PdfParserVO
 
 # Setup logging
 setup_logging(level="INFO")
@@ -10,48 +10,59 @@ logger = get_logger(__name__)
 
 @act
 @task(name="format_custom_output")
-def format_custom_output(ctx) -> PdfParserVO:
+async def format_custom_output(ctx) -> Dict[str, Any]:
     """
     Format the output according to user's requirements.
     Only uses LLM if user has specified custom output format requirements.
     """
-    vo = ctx.data['input']
+    context = ctx['input']
+    
+    # Initialize stage_data if needed
+    if 'stage_data' not in context:
+        context['stage_data'] = {}
+    if 'act' not in context['stage_data']:
+        context['stage_data']['act'] = {}
     
     # Check if user wants custom output formatting
-    if not vo.user_output_format:
+    user_output_format = context.get('user_output_format')
+    if not user_output_format:
         logger.info("No custom output format requested, skipping")
-        vo.put("act", custom_format_applied=False)
-        return vo
+        context['stage_data']['act']['custom_format_applied'] = False
+        return {'input': context}
     
-    logger.info(f"Applying custom output format: {vo.user_output_format}")
+    logger.info(f"Applying custom output format: {user_output_format}")
     
     # Get the extracted text
-    extracted_text = vo.pick("act", "extracted_text", "")
+    extracted_text = context.get('stage_data', {}).get('act', {}).get('extracted_text', '')
     
     if not extracted_text:
         logger.warning("No extracted text available for formatting")
-        vo.put("act", custom_format_applied=False, error="No text to format")
-        return vo
+        context['stage_data']['act'].update({
+            'custom_format_applied': False,
+            'error': 'No text to format'
+        })
+        return {'input': context}
     
     # Use LLM to format output according to user requirements
     # Create ToolContext to access registered tools
     tools = ToolContext()
-    formatted_output = _format_with_llm(extracted_text, vo.user_output_format, tools)
+    formatted_output = await _format_with_llm(extracted_text, user_output_format, tools)
     
     # Store formatted output in output_bundle
-    current_bundle = vo.output_bundle or {}
+    current_bundle = context.get('output_bundle', {})
     current_bundle["custom_formatted_output"] = formatted_output
-    current_bundle["custom_format_request"] = vo.user_output_format
-    vo.output_bundle = current_bundle
+    current_bundle["custom_format_request"] = user_output_format
+    context['output_bundle'] = current_bundle
     
-    vo.put("act", 
-           custom_format_applied=True,
-           formatted_output=formatted_output)
+    context['stage_data']['act'].update({
+        'custom_format_applied': True,
+        'formatted_output': formatted_output
+    })
     
     logger.info("Custom output formatting completed")
-    return vo
+    return {'input': context}
 
-def _format_with_llm(text: str, format_requirement: str, tools) -> str:
+async def _format_with_llm(text: str, format_requirement: str, tools) -> str:
     """Use LLM to format the extracted text according to user requirements."""
     
     system_prompt = """You are an expert at analyzing and formatting document content.
@@ -84,25 +95,14 @@ Format the output as requested above."""
         
         logger.info("Using OpenAI tool from registry")
         
-        # Get the OpenAI tool directly from registry and execute
-        # We can't use tools.execute_sync() because Prefect's event loop is already running
-        import asyncio
-        import concurrent.futures
-        
-        openai_tool = tools.registry.get_tool('openai')
-        
-        # Execute in a separate thread to avoid event loop conflicts
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(
-                asyncio.run,
-                openai_tool.execute(
-                    prompt=user_msg,
-                    system_prompt=system_prompt,
-                    max_tokens=1500,
-                    temperature=0.0
-                )
-            )
-            result = future.result()
+        # Execute LLM call using the tool system (async)
+        result = await tools.execute(
+            'openai',
+            prompt=user_msg,
+            system_prompt=system_prompt,
+            max_tokens=1500,
+            temperature=0.0
+        )
         
         if result.status.value == "success":
             response_text = result.data.get("response", "")

@@ -1,8 +1,8 @@
 import json
+from typing import Dict, Any
 from prefect import task
 from agent_sdk import perceive, Stage, get_logger, setup_logging
 from agent_sdk.tools.hooks import ToolContext
-from pdf_parser_agent.vo.pdf_parser_vo import PdfParserVO
 
 # Setup logging
 setup_logging(level="INFO")
@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 
 @perceive
 @task(name="parse_user_prompt")
-def parse_user_prompt(ctx) -> PdfParserVO:
+async def parse_user_prompt(ctx) -> Dict[str, Any]:
     """
     Parse the user's natural language prompt using LLM to extract:
     - File path (required)
@@ -19,8 +19,8 @@ def parse_user_prompt(ctx) -> PdfParserVO:
     
     Always uses LLM for intelligent parsing.
     """
-    vo = ctx.data['input']
-    user_prompt = vo.user_prompt
+    context = ctx['input']
+    user_prompt = context.get('user_prompt', '')
     
     if not user_prompt:
         raise ValueError("user_prompt is required")
@@ -30,35 +30,41 @@ def parse_user_prompt(ctx) -> PdfParserVO:
     
     # Create ToolContext to access registered tools
     tools = ToolContext()
-    parsed_data = _parse_with_llm(user_prompt, tools)
+    parsed_data = await _parse_with_llm(user_prompt, tools)
     
     # Extract parsed information
-    vo.file_path = parsed_data.get("file_path", "")
-    vo.user_extraction_strategy = parsed_data.get("extraction_strategy")
-    vo.user_output_format = parsed_data.get("output_format")
+    context['file_path'] = parsed_data.get("file_path", "")
+    context['user_extraction_strategy'] = parsed_data.get("extraction_strategy")
+    context['user_output_format'] = parsed_data.get("output_format")
     
     # Validate that we got a file path
-    if not vo.file_path:
+    if not context['file_path']:
         raise ValueError(f"Could not extract file path from prompt: {user_prompt}")
     
     # Store parsing metadata
-    vo.put("perceive",
-           prompt_parsed=True,
-           used_llm=True,
-           extraction_strategy_preference=vo.user_extraction_strategy,
-           output_format_preference=vo.user_output_format)
+    if 'stage_data' not in context:
+        context['stage_data'] = {}
+    if 'perceive' not in context['stage_data']:
+        context['stage_data']['perceive'] = {}
+    
+    context['stage_data']['perceive'].update({
+        'prompt_parsed': True,
+        'used_llm': True,
+        'extraction_strategy_preference': context['user_extraction_strategy'],
+        'output_format_preference': context['user_output_format']
+    })
     
     # Log extracted information
-    logger.info(f"Extracted file_path: {vo.file_path}")
-    if vo.user_extraction_strategy:
-        logger.info(f"User prefers extraction strategy: {vo.user_extraction_strategy}")
-    if vo.user_output_format:
-        logger.info(f"User wants output format: {vo.user_output_format}")
+    logger.info(f"Extracted file_path: {context['file_path']}")
+    if context['user_extraction_strategy']:
+        logger.info(f"User prefers extraction strategy: {context['user_extraction_strategy']}")
+    if context['user_output_format']:
+        logger.info(f"User wants output format: {context['user_output_format']}")
     
-    return vo
+    return {'input': context}
 
 
-def _parse_with_llm(prompt: str, tools) -> dict:
+async def _parse_with_llm(prompt: str, tools) -> dict:
     """Use LLM to parse the prompt and extract structured information."""
     
     system_prompt = """You are a parser that extracts structured information from user prompts about PDF parsing.
@@ -86,25 +92,14 @@ Example output:
         
         logger.info("Using OpenAI tool from registry")
         
-        # Get the OpenAI tool directly from registry and execute
-        # We can't use tools.execute_sync() because Prefect's event loop is already running
-        import asyncio
-        import concurrent.futures
-        
-        openai_tool = tools.registry.get_tool('openai')
-        
-        # Execute in a separate thread to avoid event loop conflicts
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(
-                asyncio.run,
-                openai_tool.execute(
-                    prompt=user_msg,
-                    system_prompt=system_prompt,
-                    max_tokens=300,
-                    temperature=0.0
-                )
-            )
-            result = future.result()
+        # Execute LLM call using the tool system (async)
+        result = await tools.execute(
+            'openai',
+            prompt=user_msg,
+            system_prompt=system_prompt,
+            max_tokens=300,
+            temperature=0.0
+        )
         
         if result.status.value == "success":
             response_text = result.data.get("response", "{}")

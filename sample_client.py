@@ -31,7 +31,7 @@ async def example_2_resume_with_requirements():
     
     # Initialize agent with LLM config
     llm_config = {
-        'api_key': os.getenv('OPENAI_API_KEY', ''your_api_key''),
+        'api_key': os.getenv('OPENAI_API_KEY', 'your_api_key'),
         'model': 'gpt-4o-mini',
         'max_tokens': 1500,
         'temperature': 0.0
@@ -68,7 +68,7 @@ async def example_3_invoice_ocr():
     print("="*70)
     
     llm_config = {
-        'api_key': os.getenv('OPENAI_API_KEY', ''your_api_key''),
+        'api_key': os.getenv('OPENAI_API_KEY', 'your_api_key'),
         'model': 'gpt-4o-mini',
         'max_tokens': 1500,
         'temperature': 0.0
@@ -101,7 +101,7 @@ async def example_4_contract_hybrid():
     print("="*70)
     
     llm_config = {
-        'api_key': os.getenv('OPENAI_API_KEY', ''your_api_key''),
+        'api_key': os.getenv('OPENAI_API_KEY', 'your_api_key'),
         'model': 'gpt-4',
         'max_tokens': 1500,
         'temperature': 0.0
