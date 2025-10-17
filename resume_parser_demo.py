@@ -78,24 +78,24 @@ async def parse_resume_with_intelligent_prompt():
         # Show extracted metadata
         print("\n📊 EXTRACTION METADATA")
         print("-" * 80)
-        print(f"File Path:          {result.file_path}")
-        print(f"Session ID:         {result.session_id}")
-        print(f"Strategy Used:      {result.output_bundle.get('parsing_strategy', 'N/A')}")
-        print(f"PDF Type:           {result.output_bundle.get('pdf_type', 'N/A')}")
-        print(f"Page Count:         {result.output_bundle.get('page_count', 0)}")
-        print(f"LLM Used:           {result.pick('perceive', 'used_llm', False)}")
-        print(f"Custom Format:      {result.pick('act', 'custom_format_applied', False)}")
+        print(f"File Path:          {result.get('file_path', 'N/A')}")
+        print(f"Session ID:         {result.get('session_id', 'N/A')}")
+        print(f"Strategy Used:      {result.get('output_bundle', {}).get('parsing_strategy', 'N/A')}")
+        print(f"PDF Type:           {result.get('output_bundle', {}).get('pdf_type', 'N/A')}")
+        print(f"Page Count:         {result.get('output_bundle', {}).get('page_count', 0)}")
+        print(f"LLM Used:           {result.get('stage_data', {}).get('perceive', {}).get('used_llm', False)}")
+        print(f"Custom Format:      {result.get('stage_data', {}).get('act', {}).get('custom_format_applied', False)}")
         
         # Show extraction statistics
         print("\n📈 EXTRACTION STATISTICS")
         print("-" * 80)
-        parsed_data = result.output_bundle.get('parsed_content', {})
+        parsed_data = result.get('output_bundle', {}).get('parsed_content', {})
         print(f"Text Length:        {parsed_data.get('text_length', 0):,} characters")
         print(f"Images Extracted:   {parsed_data.get('image_count', 0)}")
         print(f"Tables Extracted:   {parsed_data.get('table_count', 0)}")
         
         # Show extraction methods used
-        extraction_methods = result.pick('plan', 'extraction_methods', [])
+        extraction_methods = result.get('stage_data', {}).get('plan', {}).get('extraction_methods', [])
         print(f"Extraction Methods: {', '.join(extraction_methods)}")
         
         # Show FULL parsed content
@@ -112,8 +112,9 @@ async def parse_resume_with_intelligent_prompt():
         # Show what user requested in the prompt
         print("\n🎯 WHAT YOU ASKED FOR IN YOUR PROMPT:")
         print("=" * 80)
-        if result.user_output_format:
-            print(f"You requested: \"{result.user_output_format}\"")
+        user_output_format = result.get('user_output_format')
+        if user_output_format:
+            print(f"You requested: \"{user_output_format}\"")
         else:
             print("No specific output format was requested")
         
@@ -122,7 +123,7 @@ async def parse_resume_with_intelligent_prompt():
         print("=" * 80)
         print("This is the exact information you asked for, extracted and formatted by LLM:\n")
         
-        custom_output = result.output_bundle.get('custom_formatted_output')
+        custom_output = result.get('output_bundle', {}).get('custom_formatted_output')
         if custom_output:
             print(custom_output)
         else:
@@ -135,24 +136,25 @@ async def parse_resume_with_intelligent_prompt():
         # Show user preferences that were extracted
         print("\n🔍 USER PREFERENCES EXTRACTED FROM PROMPT")
         print("-" * 80)
-        print(f"Original Prompt:      {result.user_prompt[:80]}...")
-        print(f"Extraction Strategy:  {result.user_extraction_strategy or 'Auto-detected'}")
-        print(f"Output Format:        {result.user_output_format or 'Default'}")
+        user_prompt = result.get('user_prompt', '')
+        print(f"Original Prompt:      {user_prompt[:80] if user_prompt else 'N/A'}...")
+        print(f"Extraction Strategy:  {result.get('user_extraction_strategy') or 'Auto-detected'}")
+        print(f"Output Format:        {result.get('user_output_format') or 'Default'}")
         
         # Show stage execution summary
         print("\n⏱️  STAGE EXECUTION SUMMARY")
         print("-" * 80)
         print("✓ PERCEIVE stages:")
         print(f"  • parse_user_prompt      - Extracted file path and preferences")
-        print(f"  • validate_file_path     - File exists: {result.pick('perceive', 'file_valid', False)}")
-        print(f"  • detect_pdf_type        - Type: {result.pick('perceive', 'pdf_type', 'unknown')}")
+        print(f"  • validate_file_path     - File exists: {result.get('stage_data', {}).get('perceive', {}).get('file_valid', False)}")
+        print(f"  • detect_pdf_type        - Type: {result.get('stage_data', {}).get('perceive', {}).get('pdf_type', 'unknown')}")
         print("\n✓ PLAN stages:")
-        print(f"  • select_parsing_strategy - Strategy: {result.output_bundle.get('parsing_strategy')}")
+        print(f"  • select_parsing_strategy - Strategy: {result.get('output_bundle', {}).get('parsing_strategy')}")
         print(f"  • prepare_extraction_config - Config prepared")
         print("\n✓ ACT stages:")
         print(f"  • extract_content        - Extracted {parsed_data.get('text_length', 0)} chars")
         print(f"  • structure_output       - Structured into output bundle")
-        print(f"  • format_custom_output   - Applied custom formatting: {result.pick('act', 'custom_format_applied', False)}")
+        print(f"  • format_custom_output   - Applied custom formatting: {result.get('stage_data', {}).get('act', {}).get('custom_format_applied', False)}")
         
         # Success summary
         print("\n" + "=" * 80)
